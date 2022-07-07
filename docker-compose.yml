@@ -1,0 +1,70 @@
+version: "3.3"
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.13.1
+    volumes:
+      - /home/ubuntu/docker-elk/elasticsearch/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
+      - /home/ubuntu/docker-elk/elasticsearch/data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    environment:
+      ES_JAVA_OPTS: "-Xmx4g -Xms4g"
+      ELASTIC_PASSWORD: presslogic
+      discovery.type: single-node
+      network.publish_host: _eth0_
+    networks:
+      - elk
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.13.1
+    volumes:
+      - /home/ubuntu/docker-elk/logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml
+      - /home/ubuntu/docker-elk/logstash/pipeline/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+    ports:
+      - "5044:5044"
+      - "5000:5000/tcp"
+      - "5000:5000/udp"
+      - "9600:9600"
+    environment:
+      LS_JAVA_OPTS: "-Xmx4g -Xms4g"
+    networks:
+      - elk
+    depends_on:
+      - elasticsearch
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.13.1
+    volumes:
+      - /home/ubuntu/docker-elk/kibana/config/kibana.yml:/usr/share/kibana/config/kibana.yml
+    ports:
+      - "5601:5601"
+    networks:
+      - elk
+      - traefik-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-net"
+      - "traefik.port=80"
+      - "traefik.http.routers.tapnow-log.rule=Host(`tapnow-log-stg.presslogicdev.com`)"
+    depends_on:
+      - elasticsearch
+
+  logspout:
+    image: bekt/logspout-logstash
+    environment:
+      ROUTE_URIS: logstash://logstash:5000
+      LOGSTASH_TAGS: docker-elk
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - logstash
+    networks:
+      - elk
+
+networks:
+  elk:
+    driver: bridge
+  traefik-net:
+    external: true
